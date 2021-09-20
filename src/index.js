@@ -1,11 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-
-const { v4: uuidv4 } = require('uuid');
-
-const app = express();
-
-app.use(express.json());
+const { v4: uuidv4, validate  } = require('uuid');
+const { json } = require('express');
 
 
 
@@ -21,18 +17,79 @@ function checksExistsUserAccount(request, response, next) {
 
   const { username } = request.headers;
     
-    
-
   const user = users.find((user) => user.username === username);
 
-  
   if(!user){
-      return response.status(400).json({error: "User not found"});
+      return response.status(404).json({error: "User not found"});
   }
 
  request.user = user;
 
   return next();
+};
+
+function checksCreateTodosUserAvailability(request, response, next){
+  const { user } = request;
+
+
+  if(user.pro || user.todos.length < 10){
+    return next();
+    
+  }
+  return response.status(403).json({ error: "Error of number the todos" });
+};
+
+function checksTodoExists(request, response, next){
+  const { username } = request.headers;
+  const { id } = request.params;
+
+ 
+ 
+  const user = users.find((user) => user.username === username);
+  
+  const infoTodos = user.todos;
+
+ 
+  if(!user){
+    return response.status(404).json({error: "User not found"});
+  }
+
+  if (!validate(id)) {
+    return response.status(400).json({error: "Id, format invalid"});
+  } 
+
+  const userid = infoTodos.find((user) => user.id === id);
+
+  if(!userid){
+      return response.status(400).json({error: "ID dont found!"})
+  }
+
+  request.user = user;
+  request.id = id;
+
+  next();
+
+}
+
+function findUserById(request, response, next){
+  const { id } = request.params
+
+  const user = users.find((user) => user.id === id);
+
+
+ if(!validate(id)){
+  return response.status(400).json({error: "Id, format invalid"});
+ 
+  }
+  
+  if(!user){
+    return response.status(404).json({error: "User not found"});
+  
+  };
+  
+ request.user = user;
+
+ return next();
 }
 
 app.post('/users', (request, response) => {
@@ -47,6 +104,7 @@ app.post('/users', (request, response) => {
   const user = {
       name,
       username,
+      pro: false,
       id: uuidv4(),
       todos: []
 
@@ -59,14 +117,20 @@ app.post('/users', (request, response) => {
 
 });
 
+app.get('/users/:id', checksExistsUserAccount,findUserById, (request, response) => {
+   const { user } =  request;
+
+    return response.json(user);
+});
+
 app.get('/todos', checksExistsUserAccount, (request, response) => {
   const { user } =  request;
 
     return response.json(user.todos);
 });
 
-app.post('/todos', checksExistsUserAccount, (request, response) => {
-      const {title , deadline} = request.body;
+app.post('/todos', checksExistsUserAccount,checksCreateTodosUserAvailability,(request, response) => {
+    const {title , deadline} = request.body;
 
     const { user } = request;
 
@@ -80,31 +144,31 @@ app.post('/todos', checksExistsUserAccount, (request, response) => {
 
     user.todos.push(todosOperation);
 
-    return response.status(201).send("Todos was created!");
+    if(user.todos.length >= 10){
+      user.pro = true
+    }
 
+    return response.status(201).send("Todos was created!");
+    
 });
 
-app.put('/todos/:id', checksExistsUserAccount, (request, response) => {
-  const { id } = request.params;
-
-  const { user } = request;
+app.put('/todos/:id',checksExistsUserAccount, checksTodoExists, (request, response) => {
 
   const { title, deadline} = request.body;
 
-  
-  const infoTodos = user.todos;
+  const { user , id} = request;
+  console.log(id);
+  const newTodo = {
+   id,
+   title,
+   deadline: new Date(deadline),
+   done: false,
+   created_at: new Date(),
+ }
 
+ user.todos.push(newTodo);
 
-  const userid = infoTodos.find((user) => user.id === id);
-
-  if(!userid){
-      return response.status(400).json({error: "ID dont found!"})
-  }
-
-  userid.title = title;
-  userid.deadline = deadline;
-
-  return response.status(201).json({ok: "todos as updated!", userid});
+  return response.status(201).json({ok: "todos as updated!", newTodo});
 
 });
 
